@@ -20,6 +20,7 @@ from __future__ import absolute_import
 
 import errno
 import os
+import random
 import select
 import socket
 import struct
@@ -196,6 +197,7 @@ class ResultHandler(_pool.ResultHandler):
         else:
             buf = bufv = BytesIO()
         # header
+        assert not isblocking(fd)
 
         while Hr < 4:
             try:
@@ -248,21 +250,21 @@ class ResultHandler(_pool.ResultHandler):
         fileno_to_outq = self.fileno_to_outq
         on_state_change = self.on_state_change
         add_reader = hub.add_reader
-        remove_reader = hub.remove_reader
+        hub_remove = hub.remove
         recv_message = self._recv_message
 
         def on_result_readable(fileno):
             try:
                 fileno_to_outq[fileno]
             except KeyError:  # process gone
-                return remove_reader(fileno)
+                return hub_remove(fileno)
             it = recv_message(add_reader, fileno, on_state_change)
             try:
                 next(it)
             except StopIteration:
                 pass
             except (IOError, OSError, EOFError):
-                remove_reader(fileno)
+                hub_remove(fileno)
             else:
                 add_reader(fileno, it)
         return on_result_readable
@@ -483,9 +485,7 @@ class AsynPool(_pool.Pool):
     def _create_process_handlers(self, hub, READ=READ, ERR=ERR):
         """For async pool this will create the handlers called
         when a process is up/down and etc."""
-        add_reader, remove_reader, remove_writer = (
-            hub.add_reader, hub.remove_reader, hub.remove_writer,
-        )
+        add_reader, hub_remove = hub.add_reader, hub.remove
         cache = self._cache
         all_inqueues = self._all_inqueues
         fileno_to_inq = self._fileno_to_inq
@@ -536,7 +536,7 @@ class AsynPool(_pool.Pool):
 
         self.on_process_up = on_process_up
 
-        def _remove_from_index(obj, proc, index, remove_fun, callback=None):
+        def _remove_from_index(obj, proc, index, callback=None):
             # this remove the file descriptors for a process from
             # the indices.  we have to make sure we don't overwrite
             # another processes fds, as the fds may be reused.
@@ -552,7 +552,7 @@ class AsynPool(_pool.Pool):
             except KeyError:
                 pass
             else:
-                remove_fun(fd)
+                hub_remove(fd)
                 if callback is not None:
                     callback(fd)
             return fd
@@ -562,29 +562,23 @@ class AsynPool(_pool.Pool):
             if proc.dead:
                 return
             process_flush_queues(proc)
-            _remove_from_index(
-                proc.outq._reader, proc, fileno_to_outq, remove_reader,
-            )
+            _remove_from_index(proc.outq._reader, proc, fileno_to_outq)
             if proc.synq:
-                _remove_from_index(
-                    proc.synq._writer, proc, fileno_to_synq, remove_writer,
-                )
-            inq = _remove_from_index(
-                proc.inq._writer, proc, fileno_to_inq, remove_writer,
-                callback=all_inqueues.discard,
-            )
+                _remove_from_index(proc.synq._writer, proc, fileno_to_synq)
+            inq = _remove_from_index(proc.inq._writer, proc, fileno_to_inq,
+                                     callback=all_inqueues.discard)
             if inq:
                 busy_workers.discard(inq)
-            remove_reader(proc.sentinel)
+            hub_remove(proc.sentinel)
             waiting_to_start.discard(proc)
             self._active_writes.discard(proc.inqW_fd)
-            remove_writer(proc.inqW_fd)
-            remove_reader(proc.outqR_fd)
+            hub_remove(proc.inqW_fd)
+            hub_remove(proc.outqR_fd)
             if proc.synqR_fd:
-                remove_reader(proc.synqR_fd)
+                hub_remove(proc.synqR_fd)
             if proc.synqW_fd:
                 self._active_writes.discard(proc.synqW_fd)
-                remove_reader(proc.synqW_fd)
+                hub_remove(proc.synqW_fd)
         self.on_process_down = on_process_down
 
     def _create_write_handlers(self, hub,
@@ -602,7 +596,7 @@ class AsynPool(_pool.Pool):
         active_writers = self._active_writers
         busy_workers = self._busy_workers
         diff = all_inqueues.difference
-        add_writer = hub.add_writer
+        add_reader, add_writer = hub.add_reader, hub.add_writer
         hub_add, hub_remove = hub.add, hub.remove
         mark_write_fd_as_active = active_writes.add
         mark_write_gen_as_active = active_writers.add
@@ -645,6 +639,8 @@ class AsynPool(_pool.Pool):
 
             def on_poll_start():
                 if outbound and len(busy_workers) < len(all_inqueues):
+                    #print('ALL: %r ACTIVE: %r' % (len(all_inqueues),
+                    #                              len(active_writes)))
                     inactive = diff(active_writes)
                     [hub_add(fd, None, WRITE | ERR, consolidate=True)
                      for fd in inactive]
@@ -673,25 +669,14 @@ class AsynPool(_pool.Pool):
                 pass
         self.on_inqueue_close = on_inqueue_close
 
-        def schedule_writes(ready_fds, curindex=[0]):
+        def schedule_writes(ready_fds, shuffle=random.shuffle):
             # Schedule write operation to ready file descriptor.
             # The file descriptor is writeable, but that does not
             # mean the process is currently reading from the socket.
             # The socket is buffered so writeable simply means that
             # the buffer can accept at least 1 byte of data.
-
-            # This means we have to cycle between the ready fds.
-            # the first version used shuffle, but using i % total
-            # is about 30% faster with many processes.  The latter
-            # also shows more fairness in write stats when used with
-            # many processes [XXX On OS X, this may vary depending
-            # on event loop implementation (i.e select vs epoll), so
-            # have to test further]
-            total = len(ready_fds)
-
-            for i in range(total):
-                ready_fd = ready_fds[curindex[0] % total]
-                curindex[0] += 1
+            shuffle(ready_fds)
+            for ready_fd in ready_fds:
                 if ready_fd in active_writes:
                     # already writing to this fd
                     continue
@@ -1152,6 +1137,8 @@ class AsynPool(_pool.Pool):
                     self._queues[self.create_process_queues()] = None
             except ValueError:
                 pass
+                # Not in queue map, make sure sockets are closed.
+                #self.destroy_queues((proc.inq, proc.outq, proc.synq))
             assert len(self._queues) == before
 
     def destroy_queues(self, queues, proc):

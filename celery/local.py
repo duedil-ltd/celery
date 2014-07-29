@@ -249,10 +249,9 @@ class PromiseProxy(Proxy):
                              '_Proxy__kwargs')):
         try:
             thing = Proxy._get_current_object(self)
-        except:
-            raise
-        else:
             object.__setattr__(self, '__thing', thing)
+            return thing
+        finally:
             for attr in _clean:
                 try:
                     object.__delattr__(self, attr)
@@ -273,7 +272,6 @@ class PromiseProxy(Proxy):
                         object.__delattr__(self, '__pending__')
                     except AttributeError:
                         pass
-            return thing
 
 
 def maybe_evaluate(obj):

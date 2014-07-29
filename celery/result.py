@@ -718,10 +718,7 @@ class ResultSet(ResultBase):
 
     @property
     def supports_native_join(self):
-        try:
-            return self.results[0].supports_native_join
-        except IndexError:
-            pass
+        return self.results[0].supports_native_join
 
     @property
     def backend(self):

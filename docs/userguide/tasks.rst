@@ -514,19 +514,10 @@ General
     If it is an integer or float, it is interpreted as "tasks per second".
 
     The rate limits can be specified in seconds, minutes or hours
-    by appending `"/s"`, `"/m"` or `"/h"` to the value.  Tasks will be evenly
-    distributed over the specified time frame.
-
-    Example: `"100/m"` (hundred tasks a minute). This will enforce a minimum
-    delay of 600ms between starting two tasks on the same worker instance.
-    
-    Default is the :setting:`CELERY_DEFAULT_RATE_LIMIT` setting,
-    which if not specified means rate limiting for tasks is disabled by default.
-
-    Note that this is a *per worker instance* rate limit, and not a global
-    rate limit. To enforce a global rate limit (e.g. for an API with a
-    maximum number of  requests per second), you must restrict to a given
-    queue.
+    by appending `"/s"`, `"/m"` or `"/h"` to the value.
+    Example: `"100/m"` (hundred tasks a minute).  Default is the
+    :setting:`CELERY_DEFAULT_RATE_LIMIT` setting, which if not specified means
+    rate limiting for tasks is disabled by default.
 
 .. attribute:: Task.time_limit
 
@@ -1171,8 +1162,8 @@ yourself:
 
 .. code-block:: python
 
-    >>> from proj.celery import app
-    >>> app.tasks
+    >>> from celery import current_app
+    >>> current_app.tasks
     {'celery.chord_unlock':
         <@task: celery.chord_unlock>,
      'celery.backend_cleanup':

@@ -271,16 +271,12 @@ class test_AMQPBackend(AppCase):
             tids.append(tid)
 
         res = list(b.get_many(tids, timeout=1))
-        expected_results = [
-            (task_id, {
-                'status': states.SUCCESS,
-                'result': i,
-                'traceback': None,
-                'task_id': task_id,
-                'children': None,
-            })
-            for i, task_id in enumerate(tids)
-        ]
+        expected_results = [(tid, {'status': states.SUCCESS,
+                                   'result': i,
+                                   'traceback': None,
+                                   'task_id': tid,
+                                   'children': None})
+                            for i, tid in enumerate(tids)]
         self.assertEqual(sorted(res), sorted(expected_results))
         self.assertDictEqual(b._cache[res[0][0]], res[0][1])
         cached_res = list(b.get_many(tids, timeout=1))

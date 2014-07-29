@@ -50,6 +50,9 @@ ZERO = timedelta(0)
 
 _local_timezone = None
 
+__timezone__ = -_time.timezone
+__altzone__ = -_time.altzone
+
 
 class LocalTimezone(tzinfo):
     """Local time implementation taken from Python's docs.
@@ -331,10 +334,10 @@ class ffwd(object):
         }, **extra)
 
 
-def utcoffset(time=_time):
-    if time.daylight:
-        return time.altzone // 3600
-    return time.timezone // 3600
+def utcoffset():
+    if _time.daylight:
+        return __altzone__ // 3600
+    return __timezone__ // 3600
 
 
 def adjust_timestamp(ts, offset, here=utcoffset):

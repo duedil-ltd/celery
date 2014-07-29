@@ -235,7 +235,7 @@ def _is_magic_module(m):
 
     # pyflakes refuses to accept 'noqa' for this isinstance.
     cls, modtype = m.__class__, types.ModuleType
-    return (cls is not modtype and (
+    return (not cls is modtype and (
         '__getattr__' in vars(m.__class__) or
         '__getattribute__' in vars(m.__class__)))
 

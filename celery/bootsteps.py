@@ -232,8 +232,6 @@ class Blueprint(object):
         return next((C for C in values(self.steps) if C.last), None)
 
     def _firstpass(self, steps):
-        for step in values(steps):
-            step.requires = [symbol_by_name(dep) for dep in step.requires]
         stream = deque(step.requires for step in values(steps))
         while stream:
             for node in stream.popleft():
@@ -285,6 +283,7 @@ class StepType(type):
         attrs.update(
             __qualname__=qname,
             name=attrs.get('name') or qname,
+            requires=attrs.get('requires', ()),
         )
         return super(StepType, cls).__new__(cls, name, bases, attrs)
 

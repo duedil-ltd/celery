@@ -447,7 +447,7 @@ class Service(object):
         return self.__class__, (self.max_interval, self.schedule_filename,
                                 self.scheduler_cls, self.app)
 
-    def start(self, embedded_process=False, drift=-0.010):
+    def start(self, embedded_process=False):
         info('beat: Starting...')
         debug('beat: Ticking with max interval->%s',
               humanize_seconds(self.scheduler.max_interval))
@@ -460,11 +460,9 @@ class Service(object):
         try:
             while not self._is_shutdown.is_set():
                 interval = self.scheduler.tick()
-                interval = interval + drift if interval else interval
-                if interval and interval > 0:
-                    debug('beat: Waking up %s.',
-                          humanize_seconds(interval, prefix='in '))
-                    time.sleep(interval)
+                debug('beat: Waking up %s.',
+                      humanize_seconds(interval, prefix='in '))
+                time.sleep(interval)
         except (KeyboardInterrupt, SystemExit):
             self._is_shutdown.set()
         finally:

@@ -270,7 +270,7 @@ class Consumer(object):
             self.on_task_request(request)
 
     def start(self):
-        blueprint = self.blueprint
+        blueprint, loop = self.blueprint, self.loop
         while blueprint.state != CLOSE:
             self.restart_count += 1
             maybe_shutdown()
@@ -807,7 +807,7 @@ class Gossip(bootsteps.ConsumerStep):
                     message.payload['hostname'])
         if hostname != self.hostname:
             type, event = prepare(message.payload)
-            self.update_state(event)
+            obj, subject = self.update_state(event)
         else:
             self.clock.forward()
 
